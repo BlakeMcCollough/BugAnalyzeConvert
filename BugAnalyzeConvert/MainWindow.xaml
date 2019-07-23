@@ -5,7 +5,7 @@
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:local="clr-namespace:BugAnalyzeConvert"
         mc:Ignorable="d"
-        Title="MainWindow" Height="200" Width="250">
+        Title="Make CDBugLog" Height="200" Width="250">
     <Grid x:Name="TheGrid" MouseDown="TheGrid_MouseDown" Focusable="True">
         <StackPanel Margin="10">
             <Label Content="Client:" />

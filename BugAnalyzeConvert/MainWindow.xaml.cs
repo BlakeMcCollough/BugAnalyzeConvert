@@ -19,18 +19,20 @@ namespace BugAnalyzeConvert
         private string[] _delimiters; //delimiters used to seperate each packet's bytes
         private bool _problems; //is set true if a bad line is read
         private int _packetCount; //iterates when a new packet is formatted
+        private List<string> _reservedData; //sometimes data is used across multiple packets, in this situation, reservedData is stored to keep track of it all (first item is total length)
         private DateTime _prevTime; //store the previous packet date so an elapsed time can be calculated
         private HeaderByteLocations _byteLocations;
 
         public MainWindow()
         {
             InitializeComponent();
-            _megaText = "\r\n ******* Log Started: qs1com[   300] 2019/07/08 15:18:53:0606 by NETPTR05 on 10.0.130.126:1150 **********\r\n";
+            _megaText = "\r\n ******* Log Started: qs1com\r\n";
             _packetCount = 0;
             _prevTime = new DateTime(0);
             _delimiters = new string[] { "|", "0   " }; //things we want to split the string by
             _byteLocations = new HeaderByteLocations();
             _problems = false;
+            _reservedData = new List<string>();
         }
 
         private void FileButton_Click(object sender, RoutedEventArgs e)
@@ -38,6 +40,11 @@ namespace BugAnalyzeConvert
             OpenFileDialog newWindow = new OpenFileDialog();
             if(newWindow.ShowDialog() == true)
             {
+                if(string.Compare(Path.GetExtension(newWindow.FileName).ToLower(), ".txt") != 0)
+                {
+                    MessageBox.Show("File needs to be saved as a K12 text file");
+                    return;
+                }
                 ReadThroughFile(newWindow.FileName);
                 if(_packetCount <= 0)
                 {
@@ -115,12 +122,11 @@ namespace BugAnalyzeConvert
                 return data; //data does NOT have tcp layer
             }
             int totalLength = int.Parse(string.Concat(data[startOfData + _byteLocations.TotalLengthByte], data[startOfData + _byteLocations.TotalLengthByte + 1]), System.Globalization.NumberStyles.HexNumber) + startOfData;
-            int version = int.Parse(data[startOfData][0].ToString()); //used to count how many bytes per header length
 
 
-            startOfData = startOfData + int.Parse(data[startOfData][1].ToString()) * version; //goes to the end of IP header, ie 4*5=20
+            startOfData = startOfData + int.Parse(data[startOfData][1].ToString()) * 4; //goes to the end of IP header, ie 4*5=20
 
-            startOfData = startOfData + int.Parse(data[startOfData + _byteLocations.TcpLengthByte][0].ToString()) * version; //why is this 4? because 5 * 4 = 20?
+            startOfData = startOfData + int.Parse(data[startOfData + _byteLocations.TcpLengthByte][0].ToString()) * 4; //why is this 4? because 5 * 4 = 20?
 
             int ipResult = AcceptableIp(data);
             List<string> rawData = data.GetRange(startOfData, totalLength - startOfData);
@@ -130,16 +136,57 @@ namespace BugAnalyzeConvert
             }
             else if(ipResult == 1)
             {
-                rawData.Insert(0, "53");
+                rawData = CheckReserveData(rawData, true);
             }
             else if(ipResult == 2)
             {
-                rawData.RemoveRange(0, 2);
+                rawData = CheckReserveData(rawData, false);
             }
             else
             {
                 rawData.Clear();
             }
+            return rawData;
+        }
+
+        //is data is being stored to keep track of multi-package payloads, this method will return empty list if more is stored, or the entire reserve if data is finished
+        private List<string> CheckReserveData(List<string> rawData, bool isClient)
+        {
+            if (_reservedData.Count > 0)
+            {
+                _reservedData = _reservedData.Concat(rawData).ToList();
+                rawData.Clear();
+                if (_reservedData.Count > int.Parse(_reservedData[0]))
+                {
+                    rawData = rawData.Concat(_reservedData).ToList();
+                    _reservedData.Clear();
+                    rawData.RemoveAt(0);
+                }
+            }
+            else if (rawData.Count <= 2) //there's barely any data! just kill it
+            {
+                rawData.Clear();
+            }
+            else
+            {
+                int rawDataLength = int.Parse(string.Concat(rawData[1], rawData[0]), System.Globalization.NumberStyles.HexNumber); //is the total size of raw data going to be sent; INCLUDES data from following packets
+                if(isClient == true)
+                {
+                    rawData.Insert(0, "53");
+                }
+                else
+                {
+                    rawData.RemoveRange(0, 2);
+                }
+                
+                if (rawDataLength >= 1460)
+                {
+                    _reservedData.Add(rawDataLength.ToString());
+                    _reservedData = _reservedData.Concat(rawData).ToList();
+                    rawData.Clear();
+                }
+            }
+
             return rawData;
         }
 
