@@ -247,7 +247,7 @@ namespace BugAnalyzeConvert
                 Console.WriteLine($"Bad line detected: {line}");
                 return;
             }
-
+            
             if(rawData.Count <= 0)
             {
                 return;
